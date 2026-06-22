@@ -82,6 +82,19 @@ Entity classes own their own DB methods. One file per entity. This is intentiona
 
 ---
 
+## Database
+
+**Database Name:** `SmartShevet`
+
+**Critical Rule:** Every SQL query executed via `execute_sql` must begin with:
+```sql
+USE SmartShevet;
+```
+
+This ensures all queries target the correct database context. Failure to include this statement will result in queries executing against the wrong database or failing with database-not-selected errors.
+
+---
+
 ## UC Diagram — Conventions
 
 The diagram is generated from inline JavaScript data and rendered by an external shared script. Rules:
@@ -140,7 +153,7 @@ These apply across all SAD projects:
 
 | File | Purpose |
 |---|---|
-| `docs/org-analysis/01-organization.md` | Organization context: Shevet Ariות structure, current problems, stakeholders (Hebrew) |
+| `docs/org-analysis/01-organization.md` | Organization context: Shevet Arayot structure, current problems, stakeholders (Hebrew) |
 | `docs/org-analysis/02-interviews.md` | Interview summaries from guides, coordinators, warehouse staff (Hebrew) |
 | `docs/org-analysis/03-problems.md` | Problems table: 17 identified issues, root causes, desired solutions (Hebrew) |
 | `docs/org-analysis/04-business-processes.md` | Three business processes with BPMN diagrams (Hebrew) |
@@ -189,32 +202,36 @@ ReservationDetails (association class), Attendance (association class)
 
 Beyond the cross-project decisions in PATTERNS.md:
 
-### Initial Implementation Scope
-**Equipment Domain Only.** The initial implementation focuses exclusively on equipment management, reservation, and logistics workflows. No other domain features are in scope.
+### MVP Scope — Equipment Management Only
 
-Implemented Use Cases:
+**STRICT SCOPE:** This MVP implements ONLY the Equipment Management module. Zero out-of-scope features, entities, or database tables are permitted.
+
+**Implemented Use Cases (6 total):**
 
 1. **Manage Equipment** (US1) — CRUD for warehouse inventory (create, view, update, delete equipment items with category, type, quantity, status)
-2. **Reserve Equipment** (UC3) — guides request equipment for activities; automatic availability verification
+2. **Reserve Equipment** (UC3) — warehouse staff or senior coordinators request equipment; automatic availability verification
 3. **Edit Equipment Reservation** (US3) — modify pending reservation requests
-4. **Giving Equipment** (UC4) — warehouse staff issue reserved equipment to guides; update equipment status to "Borrowed"
+4. **Giving Equipment** (UC4) — warehouse staff issue reserved equipment; update equipment status to "Borrowed"
 5. **Return Equipment** (UC5) — warehouse staff receive and document returned equipment; track condition status (good/damaged/missing)
-6. **Manage Equipment Status** — view and change equipment status across the system (available, borrowed, damaged, missing, under repair)
+6. **Manage Equipment Status** — view and change equipment status across the system (available, borrowed, reserved, underRepair, lost, damaged)
 
-**Explicitly Excluded from Initial Scope:**
-- Scout attendance tracking (US17–US19)
-- Activity management and approval workflows (US8–US10)
-- Senior scout/staff management and performance tracking (US12–US15, US22)
-- Competency scoring and reporting (US22–US23)
-- Multi-user, concurrent access, and offline support (US24–US26)
-- Audit trail and action history (NFR)
-- Set Minimum Threshold will be implemented in Phase 2 after core inventory management is stable
+**Allowed Database Entities (7 total):**
+1. Equipment
+2. EquipmentReservation
+3. ReservationDetails
+4. EquipmentIssue
+5. SeniorScout
+6. WarehouseStaffMember
+7. SeniorCoordinator
 
-**Rationale for Equipment-Only Scope:**
-- Creates a coherent, self-contained business process with clear boundaries (reserve → issue → return)
-- Allows validation of core architecture (Entity pattern, in-memory lists, panel navigation, CRUD panels)
-- Manageable scope for initial development cycle with clear success criteria
-- Equipment workflow is blocking other domains; solving it first unblocks Activity and Personnel features in later phases
+**Explicitly Excluded (No code, tables, or references):**
+- Guide (use SeniorScout with role='guide' instead)
+- Troop
+- Scout
+- Activity
+- Attendance
+- All non-equipment use cases
+- Scout attendance tracking, activity management, personnel management, competency scoring, multi-user support, offline support, audit trail
 
 ### Inheritance Details
 **SeniorScout** is the parent class for all volunteer roles. The three subclasses use table-per-subclass:
