@@ -149,6 +149,67 @@ These apply across all SAD projects:
 
 ---
 
+## Entry Flow — Multi-Actor Authentication and Role-Based Routing
+
+### Design Overview
+
+SmartShevet uses a **login-first multi-actor entry flow**. Authentication is an NFR (not a UC) but is a required technical artifact for role-based access control. The system recognizes three credential-holding actor roles, each routed to a dedicated home panel after login.
+
+### Authentication Strategy
+
+Login validates against three credential-holding entities in sequence:
+
+1. **WarehouseStaffMember** (email + password) → `WarehouseStaffMemberHomePanel`
+2. **SeniorCoordinator** (email + password) → `SeniorCoordinatorHomePanel`
+3. **SeniorScout** (email + password, base class only) → `SeniorScoutHomePanel`
+
+If a match is found in any list, the user is authenticated and routed to the corresponding home panel. If no match is found, a Hebrew error message is shown: "דוא\"ל או סיסמה שגויים" (incorrect email or password).
+
+**Important:** SeniorScout authentication only matches base SeniorScout rows that are NOT also in the WarehouseStaffMember or SeniorCoordinator subclass lists. The login panel checks subclasses first.
+
+### Role Panels
+
+Each authenticated user sees a home panel specific to their role:
+
+#### WarehouseStaffMemberHomePanel
+- **Visible to:** Users authenticating as WarehouseStaffMember
+- **MVP Features:**
+  - "ניהול ציוד" (Manage Equipment) — placeholder for US1 (CRUD)
+  - "הנפקת ציוד" (Give Equipment) — placeholder for UC4
+  - "החזרת ציוד" (Return Equipment) — placeholder for UC5
+  - "ניהול סטטוס" (Manage Equipment Status)
+- **Navigation:** Back button returns to LoginPanel
+
+#### SeniorCoordinatorHomePanel
+- **Visible to:** Users authenticating as SeniorCoordinator
+- **MVP Features:**
+  - "אישור הזמנות" (Approve Reservations) — placeholder
+  - "ניהול סטטוס ציוד" (Manage Equipment Status) — placeholder
+  - "ניהול הזמנות" (Manage Reservations) — placeholder
+- **Navigation:** Back button returns to LoginPanel
+
+#### SeniorScoutHomePanel
+- **Visible to:** Base SeniorScout users (not in any subclass)
+- **MVP Features:**
+  - "בקשת ציוד" (Request Equipment) — placeholder for UC3 (EquipmentReservation)
+- **Navigation:** Back button returns to LoginPanel
+
+### Development Shortcut
+
+A "כניסת מפתח" (Dev Shortcut) button on LoginPanel bypasses authentication and routes directly to `WarehouseStaffMemberHomePanel`. This is used for rapid testing of warehouse workflows during development and QA.
+
+### Implementation Files
+
+- **mainForm.cs / mainForm.Designer.cs** — Single-window navigation host with static `showPanel(UserControl)` method
+- **LoginPanel.cs / LoginPanel.Designer.cs** — Multi-credential authentication and role routing
+- **WarehouseStaffMemberHomePanel.cs / .Designer.cs** — Warehouse staff home screen
+- **SeniorCoordinatorHomePanel.cs / .Designer.cs** — Coordinator home screen
+- **SeniorScoutHomePanel.cs / .Designer.cs** — Senior scout home screen
+
+All panels have RTL layout properties (`RightToLeft = Yes`, `RightToLeftLayout = true`) and Hebrew text.
+
+---
+
 ## Document Map
 
 | File | Purpose |
@@ -281,6 +342,28 @@ The following are explicitly deferred and will NOT be implemented in this phase:
 - Set Minimum Threshold for automatic reorder (US5) — Phase 2
 
 **Rationale:** Phase 1 is equipment-only. All other domains are deferred pending successful validation of the core equipment workflow architecture.
+
+---
+
+## Annual Inventory Forecast Report — Phase 1 Complete
+
+**Status:** The `sp_annual_inventory_forecast_report` stored procedure and `AnnualInventoryForecastReportPanel` implement **quantity-based forecasting** for Phase 1.
+
+**Implemented:**
+- **Result Set 1 (Consumable Usage Analysis):** Forecasts consumable quantities by analyzing historical issue patterns:
+  - Total quantity issued in the reporting period
+  - Average monthly consumption rate
+  - Projected annual consumption (monthly avg × 12)
+  - Current on-hand quantity
+  - Used by warehouse coordinators to estimate reorder quantities
+
+- **Result Set 2 (Unreturned Equipment):** Tracks borrowed equipment overdue for return with recommended recovery actions
+
+- **Result Set 3 (Damaged/Missing Summary):** Identifies equipment losses to inform replacement needs
+
+- **Result Set 4 (Summary Totals):** High-level count of consumable items, unreturned items, and damaged/missing items
+
+Cost/budget calculations are intentionally **omitted from Phase 1 scope** per MVP requirements—this is equipment logistics, not financial planning.
 
 ---
 

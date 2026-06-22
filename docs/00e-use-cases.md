@@ -250,3 +250,118 @@ TODO: Define alert mechanism for when inventory drops below threshold (SMS, emai
 ### Implementation Notes
 
 TODO: Define comment/annotation tool functionality (inline comments, tracked changes, formatting options)
+
+---
+
+## Use Case 8: View Annual Inventory Forecast Report
+
+### Behavioral Spec (Technology-Neutral)
+
+**Participants:** Senior Coordinator
+
+**Preconditions:**
+1. Senior coordinator is logged into the system
+2. At least one full year of equipment transaction history exists (issues, returns, damage reports)
+3. Equipment items are marked as consumable or reusable in the catalog
+
+**Main Flow:**
+
+1. Senior coordinator accesses the inventory forecast report screen
+2. System displays a date range selector (default: past 12 months)
+3. Senior coordinator optionally adjusts the date range or equipment filters
+4. System calculates three aggregated views:
+   - **Consumable Usage Analysis**: For each consumable item, total quantity issued and average monthly consumption rate
+   - **Unreturned Equipment Summary**: Count and list of equipment items currently in "borrowed" status beyond expected return date
+   - **Damaged Equipment Summary**: Count of items in "damaged" or "missing" status during the period
+5. System generates forecast calculations:
+   - For consumables: Extrapolate annual consumption based on monthly average
+   - Calculate estimated reorder budget based on unit costs and projected consumption
+   - Estimate replacement budget needed for damaged/missing items
+6. System displays the report with summary totals and item-level breakdowns
+7. Senior coordinator reviews the data and can export or print the report
+
+**Extensions:**
+
+1. If in step 3 the coordinator filters by equipment category: System recalculates all views for the selected category only
+2. If in step 5 the system detects a consumable with zero consumption: System flags it as "low-use" for review
+3. If in step 4 the system detects unreturned items overdue by more than 30 days: System highlights them in red and includes a recovery recommendation
+
+**Post-conditions:**
+
+1. Senior coordinator has a comprehensive forecast of inventory needs for budget planning
+2. Report is available for export to support procurement decisions
+3. Overdue/damaged items are flagged for follow-up action
+
+---
+
+### Implementation Notes
+
+**Data Requirements:**
+- Equipment table: equipment_id, name, category, is_consumable, unit_cost, status
+- EquipmentIssue table: equipmentissue_id, equipmentId, issueDate, returnDate, status (issued, returned, not_returned, completed)
+- Equipment transaction history grouped by:
+  - Equipment ID
+  - Issue/return date (for consumption rate calculation)
+  - Status transitions (damaged, missing, returned, not_returned)
+
+**Input Parameters:**
+- `@startDate` (DATETIME2): Beginning of analysis period (default: 12 months ago)
+- `@endDate` (DATETIME2): End of analysis period (default: TODAY)
+- `@categoryFilter` (NVARCHAR, optional): Equipment category to restrict report scope (NULL = all categories)
+- `@includeOverdueOnly` (BIT, optional): If 1, show only unreturned items overdue beyond 30 days
+
+**Output Structure:**
+
+**Section 1: Consumable Usage Analysis**
+- Equipment ID, Equipment Name, Category
+- Total Quantity Issued (sum of issued quantities in period)
+- Average Monthly Consumption (total quantity / number of months in period)
+- Projected Annual Consumption (monthly average × 12)
+- Unit Cost
+- Projected Annual Spend (projected annual consumption × unit cost)
+
+**Section 2: Unreturned Equipment Summary**
+- Equipment ID, Equipment Name
+- Issue Date
+- Days Overdue (TODAY - expected return date, if > 0)
+- Issued To (guide/scout name)
+- Status (currently "borrowed")
+- Recovery Action (recommended action: contact guide, check warehouse, report as missing)
+
+**Section 3: Damaged/Missing Equipment Summary**
+- Equipment ID, Equipment Name, Category
+- Count in "damaged" status during period
+- Count in "missing" status during period
+- Total Replacement Cost (count × unit cost)
+- Average Condition Rating (if tracked)
+
+**Section 4: Summary Totals**
+- Total Projected Consumable Budget (sum of projected annual spend)
+- Total Unreturned Equipment Value (count of items × average unit cost)
+- Total Damaged/Missing Equipment Value (replacement cost)
+- **Grand Total Estimated Budget Need** (sum of sections 1–3)
+
+**Aggregation Rules:**
+- All aggregations GROUP BY equipment_id, equipment name
+- Consumable consumption calculated as: SUM(issued quantity) WHERE is_consumable=true AND issueDate BETWEEN @startDate AND @endDate
+- Unreturned items: WHERE status='borrowed' AND expected return date < TODAY (or user-specified date)
+- Damaged/missing: WHERE status IN ('damaged', 'missing') AND status change date BETWEEN @startDate AND @endDate
+- Monthly average: total consumed / DATEDIFF(MONTH, @startDate, @endDate)
+
+**Stored Procedure Specification:**
+```
+sp_inventory_forecast_report
+  @startDate DATETIME2,
+  @endDate DATETIME2,
+  @categoryFilter NVARCHAR(100) = NULL,
+  @includeOverdueOnly BIT = 0
+```
+Returns four result sets (one per section above) with all aggregations pre-calculated.
+
+**UI Rendering:**
+- Date range picker with preset options: "Last 3 months", "Last 6 months", "Last 12 months"
+- Category dropdown (optional filter)
+- Three separate table views (Consumables, Unreturned, Damaged/Missing)
+- Summary dashboard showing grand total budget need prominently
+- Export buttons (PDF, Excel) for each section
+- Print-friendly layout with all sections on one or two pages
