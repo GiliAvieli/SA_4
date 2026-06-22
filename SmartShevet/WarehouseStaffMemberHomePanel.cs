@@ -27,14 +27,9 @@ namespace SmartShevet
             mainForm.showPanel(new EquipmentPanel());
         }
 
-        private void giveEquipmentButton_Click(object sender, EventArgs e)
+        private void issueAndReturnButton_Click(object sender, EventArgs e)
         {
-            mainForm.showPanel(new EquipmentIssuePanel());
-        }
-
-        private void returnEquipmentButton_Click(object sender, EventArgs e)
-        {
-            mainForm.showPanel(new EquipmentIssuePanel());
+            mainForm.showPanel(new IssueAndReturnEquipmentPanel());
         }
 
         private void manageStatusButton_Click(object sender, EventArgs e)

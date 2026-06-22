@@ -137,9 +137,11 @@ namespace SmartShevet
                     MessageBoxIcon.Information
                 );
 
-                // Reset catalog for new order
-                activityDatePicker.Value = DateTime.Now.AddDays(1);
-                initializeCatalog();
+                // Navigate back to role-based Main Menu
+                if (mainForm.previousPanel != null)
+                    mainForm.showPanel(mainForm.previousPanel);
+                else
+                    mainForm.showPanel(new LoginPanel());
             }
             catch (Exception ex)
             {

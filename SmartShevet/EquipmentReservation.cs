@@ -307,7 +307,7 @@ namespace SmartShevet
 
                 // Call sp_reserve_equipment via SQL_CON
                 SqlCommand cmd = new SqlCommand();
-                cmd.CommandText = "EXECUTE sp_reserve_equipment @equipmentreservation_id, @requestDate, @activityDate, @requestedById, @itemsJson";
+                cmd.CommandText = "EXECUTE [SmartShevet].dbo.sp_reserve_equipment @equipmentreservation_id, @requestDate, @activityDate, @requestedById, @itemsJson";
                 cmd.Parameters.AddWithValue("@equipmentreservation_id", newId);
                 cmd.Parameters.AddWithValue("@requestDate", requestDate);
                 cmd.Parameters.AddWithValue("@activityDate", activityDate);
@@ -330,13 +330,22 @@ namespace SmartShevet
                     false);  // is_new=false: already in DB
                 Program.EquipmentReservations.Add(newReservation);
 
-                // Step 2: Update Equipment objects in memory (set status to 'reserved')
+                // Step 2: Update Equipment objects in memory (deduct quantity, only change status if qty ≤ 0)
                 foreach (var item in items)
                 {
                     Equipment eq = Equipment.seekEquipment(item.equipmentId);
                     if (eq != null)
                     {
-                        eq.setStatus("reserved");
+                        // Deduct the quantity
+                        eq.setQuantity(eq.getQuantity() - item.quantity);
+
+                        // Only change status to 'lost' if quantity reaches 0 or below
+                        if (eq.getQuantity() <= 0)
+                        {
+                            eq.setStatus("lost");
+                        }
+                        // Otherwise, keep status as 'available'
+
                         eq.setLastUpdated(DateTime.Now);
                     }
                 }
