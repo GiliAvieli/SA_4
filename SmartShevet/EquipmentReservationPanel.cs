@@ -29,19 +29,27 @@ namespace SmartShevet
             DataGridViewTextBoxColumn nameCol = new DataGridViewTextBoxColumn();
             nameCol.Name = "שם ציוד";
             nameCol.HeaderText = "שם ציוד";
-            nameCol.Width = 200;
+            nameCol.Width = 180;
             nameCol.ReadOnly = true;
             catalogGridView.Columns.Add(nameCol);
 
-            // Column 3: Available Quantity (Read-only)
+            // Column 3: Equipment Type (Read-only)
+            DataGridViewTextBoxColumn typeCol = new DataGridViewTextBoxColumn();
+            typeCol.Name = "סוג";
+            typeCol.HeaderText = "סוג";
+            typeCol.Width = 80;
+            typeCol.ReadOnly = true;
+            catalogGridView.Columns.Add(typeCol);
+
+            // Column 4: Available Quantity/Instances (Read-only)
             DataGridViewTextBoxColumn availableCol = new DataGridViewTextBoxColumn();
-            availableCol.Name = "זמין במלאי";
-            availableCol.HeaderText = "זמין במלאי";
-            availableCol.Width = 100;
+            availableCol.Name = "זמין";
+            availableCol.HeaderText = "זמין";
+            availableCol.Width = 80;
             availableCol.ReadOnly = true;
             catalogGridView.Columns.Add(availableCol);
 
-            // Column 4: Requested Quantity (Editable)
+            // Column 5: Requested Quantity (Editable)
             DataGridViewTextBoxColumn quantityCol = new DataGridViewTextBoxColumn();
             quantityCol.Name = "כמות מבוקשת";
             quantityCol.HeaderText = "כמות מבוקשת";
@@ -51,16 +59,35 @@ namespace SmartShevet
             // Populate with all available equipment
             foreach (Equipment eq in Program.Equipments)
             {
-                if (eq.getStatus() == "available")
+                if (eq.getStatus().ToLower() == "available")
                 {
-                    int rowIndex = catalogGridView.Rows.Add(
-                        false,                          // בחר (checkbox)
-                        eq.getName(),                   // שם ציוד
-                        eq.getQuantity().ToString(),    // זמין במלאי
-                        "1"                             // כמות מבוקשת (default)
-                    );
-                    // Store Equipment object reference in row's Tag for later retrieval
-                    catalogGridView.Rows[rowIndex].Tag = eq;
+                    // Calculate available quantity based on equipment type
+                    int availableQty = 0;
+                    string typeDisplay = eq.getEquipmentType();
+
+                    if (eq.getEquipmentType().ToLower() == "consumable")
+                    {
+                        availableQty = eq.getQuantity();
+                        typeDisplay = "צריכה";  // Consumable in Hebrew
+                    }
+                    else if (eq.getEquipmentType().ToLower() == "reusable")
+                    {
+                        availableQty = EquipmentInstance.getAvailableInstancesByEquipmentId(eq.getId()).Count;
+                        typeDisplay = "שניתן לשימוש חוזר";  // Reusable in Hebrew
+                    }
+
+                    if (availableQty > 0 || eq.getEquipmentType().ToLower() == "reusable")
+                    {
+                        int rowIndex = catalogGridView.Rows.Add(
+                            false,                          // בחר (checkbox)
+                            eq.getName(),                   // שם ציוד
+                            typeDisplay,                    // סוג (consumable/reusable)
+                            availableQty.ToString(),        // זמין
+                            "0"                             // כמות מבוקשת (default to 0)
+                        );
+                        // Store Equipment object reference in row's Tag for later retrieval
+                        catalogGridView.Rows[rowIndex].Tag = eq;
+                    }
                 }
             }
 
@@ -99,8 +126,8 @@ namespace SmartShevet
 
                     if (isSelected)
                     {
-                        // Get requested quantity from column 3
-                        object qtyValue = gridRow.Cells[3].Value;
+                        // Get requested quantity from column 4 (updated: was column 3)
+                        object qtyValue = gridRow.Cells[4].Value;
                         if (!int.TryParse(qtyValue?.ToString() ?? "1", out int qty) || qty <= 0)
                         {
                             MessageBox.Show($"כמות לא תקינה לציוד: {eq.getName()}", "שגיאה", MessageBoxButtons.OK, MessageBoxIcon.Warning);
@@ -118,8 +145,8 @@ namespace SmartShevet
                     return;
                 }
 
-                // Get the requester (current user - for now, first SeniorScout)
-                int requestedById = Program.SeniorScouts.Count > 0 ? Program.SeniorScouts[0].getId() : 1;
+                // Get the requester (logged-in user)
+                int requestedById = Program.LoggedInUserId;
 
                 // Call the atomic reservation method
                 EquipmentReservation newReservation = EquipmentReservation.reserveEquipment(

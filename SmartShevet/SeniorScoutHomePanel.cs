@@ -24,6 +24,7 @@ namespace SmartShevet
 
         private void requestEquipmentButton_Click(object sender, EventArgs e)
         {
+            mainForm.previousPanel = this;
             mainForm.showPanel(new EquipmentReservationPanel());
         }
     }

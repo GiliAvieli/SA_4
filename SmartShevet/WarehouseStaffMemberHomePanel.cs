@@ -24,17 +24,20 @@ namespace SmartShevet
 
         private void manageEquipmentButton_Click(object sender, EventArgs e)
         {
-            mainForm.showPanel(new EquipmentPanel());
+            mainForm.previousPanel = this;
+            mainForm.showPanel(new EquipmentManagementPanel());
+        }
+
+        private void requestEquipmentButton_Click(object sender, EventArgs e)
+        {
+            mainForm.previousPanel = this;
+            mainForm.showPanel(new EquipmentReservationPanel());
         }
 
         private void issueAndReturnButton_Click(object sender, EventArgs e)
         {
+            mainForm.previousPanel = this;
             mainForm.showPanel(new IssueAndReturnEquipmentPanel());
-        }
-
-        private void manageStatusButton_Click(object sender, EventArgs e)
-        {
-            MessageBox.Show("TODO: ניהול סטטוס ציוד", "כניסה לתכונה", MessageBoxButtons.OK);
         }
     }
 }

@@ -125,8 +125,9 @@ namespace SmartShevet
                 int equipmentId = rdr.GetInt32(3);
                 int issuedToId = rdr.GetInt32(4);
                 int reservationId = rdr.GetInt32(5);
-                string status = rdr.GetString(6);
-                string condition = rdr.GetString(7);
+                // Guard against SQL NULLs to avoid SqlNullValueException
+                string status = rdr.IsDBNull(6) ? string.Empty : rdr.GetString(6);
+                string condition = rdr.IsDBNull(7) ? string.Empty : rdr.GetString(7);
 
                 EquipmentIssue ei = new EquipmentIssue(id, issueDate, returnDate, equipmentId, issuedToId, reservationId, status, condition, false);
                 Program.EquipmentIssues.Add(ei);

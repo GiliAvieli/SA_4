@@ -65,11 +65,5 @@ namespace SmartShevet
             // אם לא נמצא — הצג שגיאה
             MessageBox.Show("דוא\"ל או סיסמה שגויים", "שגיאה", MessageBoxButtons.OK);
         }
-
-        private void devShortcutButton_Click(object sender, EventArgs e)
-        {
-            // כניסת מפתח — עוקף אימות ופותח WarehouseStaffMemberHomePanel
-            mainForm.showPanel(new WarehouseStaffMemberHomePanel());
-        }
     }
 }

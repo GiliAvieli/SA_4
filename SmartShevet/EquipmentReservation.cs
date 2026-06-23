@@ -290,10 +290,37 @@ namespace SmartShevet
             int requestedById,
             List<(int equipmentId, int quantity)> items)
         {
+            SqlConnection conn = null;
+            SqlTransaction transaction = null;
+
             try
             {
                 // Get next reservation ID
                 int newId = getNextEquipmentReservationId();
+
+                // =====================================================================
+                // STEP 1: Open connection and begin transaction
+                // =====================================================================
+                string connectionString = System.Configuration.ConfigurationManager.ConnectionStrings["SmartShevet.Properties.Settings.SmartShevetConnectionString"].ConnectionString;
+                conn = new SqlConnection(connectionString);
+                conn.Open();
+                transaction = conn.BeginTransaction();
+
+                // =====================================================================
+                // STEP 2: Insert EquipmentReservation header WITHIN TRANSACTION
+                // =====================================================================
+                SqlCommand insertCmd = new SqlCommand();
+                insertCmd.Connection = conn;
+                insertCmd.Transaction = transaction;
+                insertCmd.CommandText = @"
+                    INSERT INTO EquipmentReservation (equipmentreservation_id, reservationStatus, requestDate, activityDate, requestedById)
+                    VALUES (@id, 'Approved', @reqDate, @actDate, @reqById)
+                ";
+                insertCmd.Parameters.AddWithValue("@id", newId);
+                insertCmd.Parameters.AddWithValue("@reqDate", requestDate);
+                insertCmd.Parameters.AddWithValue("@actDate", activityDate);
+                insertCmd.Parameters.AddWithValue("@reqById", requestedById);
+                insertCmd.ExecuteNonQuery();
 
                 // Build JSON items array for SP
                 System.Text.StringBuilder jsonBuilder = new System.Text.StringBuilder("[");
@@ -305,52 +332,39 @@ namespace SmartShevet
                 jsonBuilder.Append("]");
                 string itemsJson = jsonBuilder.ToString();
 
-                // Call sp_reserve_equipment via SQL_CON
+                // =====================================================================
+                // STEP 3: Call sp_reserve_equipment WITHIN SAME TRANSACTION
+                // =====================================================================
                 SqlCommand cmd = new SqlCommand();
+                cmd.Connection = conn;
+                cmd.Transaction = transaction;
                 cmd.CommandText = "EXECUTE [SmartShevet].dbo.sp_reserve_equipment @equipmentreservation_id, @requestDate, @activityDate, @requestedById, @itemsJson";
                 cmd.Parameters.AddWithValue("@equipmentreservation_id", newId);
                 cmd.Parameters.AddWithValue("@requestDate", requestDate);
                 cmd.Parameters.AddWithValue("@activityDate", activityDate);
                 cmd.Parameters.AddWithValue("@requestedById", requestedById);
                 cmd.Parameters.AddWithValue("@itemsJson", itemsJson);
-                SQL_CON SC = new SQL_CON();
-                SC.execute_non_query(cmd);
+                cmd.ExecuteNonQuery();
 
                 // =====================================================================
-                // ATOMIC SP succeeded — update in-memory state
+                // STEP 4: If both operations succeeded, COMMIT the transaction
                 // =====================================================================
+                transaction.Commit();
 
-                // Step 1: Create and add EquipmentReservation to in-memory list
+                // =====================================================================
+                // STEP 5: Transaction committed successfully
+                // Create in-memory objects to reflect DB state
+                // =====================================================================
                 EquipmentReservation newReservation = new EquipmentReservation(
                     newId,
                     "Approved",
                     requestDate,
                     activityDate,
                     requestedById,
-                    false);  // is_new=false: already in DB
+                    false);  // is_new=false: already in DB via transaction
                 Program.EquipmentReservations.Add(newReservation);
 
-                // Step 2: Update Equipment objects in memory (deduct quantity, only change status if qty ≤ 0)
-                foreach (var item in items)
-                {
-                    Equipment eq = Equipment.seekEquipment(item.equipmentId);
-                    if (eq != null)
-                    {
-                        // Deduct the quantity
-                        eq.setQuantity(eq.getQuantity() - item.quantity);
-
-                        // Only change status to 'lost' if quantity reaches 0 or below
-                        if (eq.getQuantity() <= 0)
-                        {
-                            eq.setStatus("lost");
-                        }
-                        // Otherwise, keep status as 'available'
-
-                        eq.setLastUpdated(DateTime.Now);
-                    }
-                }
-
-                // Step 3: Create and add ReservationDetails to in-memory list
+                // Step 2: Get next ReservationDetails ID
                 int nextDetailsId = 1;
                 if (Program.ReservationDetailsList.Count > 0)
                 {
@@ -363,25 +377,92 @@ namespace SmartShevet
                     nextDetailsId = maxDetailsId + 1;
                 }
 
-                for (int i = 0; i < items.Count; i++)
+                // Step 3: Process each item (consumable or reusable)
+                int detailIndex = 0;
+                foreach (var item in items)
                 {
+                    Equipment eq = Equipment.seekEquipment(item.equipmentId);
+                    if (eq == null) continue;
+
+                    // Create ReservationDetails record
                     ReservationDetails rd = new ReservationDetails(
-                        nextDetailsId + i,
-                        i + 1,  // entry number
-                        items[i].quantity,
-                        items[i].equipmentId,
-                        newId,  // equipmentreservation_id
+                        nextDetailsId + detailIndex,
+                        detailIndex + 1,
+                        item.quantity,
+                        item.equipmentId,
+                        newId,
                         false,  // addedEquipment = false
                         false); // is_new = false (already persisted by SP)
                     Program.ReservationDetailsList.Add(rd);
+
+                    // ========== CONSUMABLE ITEMS ==========
+                    if (eq.getEquipmentType().ToLower() == "consumable")
+                    {
+                        // Deduct the quantity
+                        eq.setQuantity(eq.getQuantity() - item.quantity);
+
+                        // Only change status to 'lost' if quantity reaches 0 or below
+                        if (eq.getQuantity() <= 0)
+                        {
+                            eq.setStatus("lost");
+                        }
+                        eq.setLastUpdated(DateTime.Now);
+                    }
+
+                    // ========== REUSABLE ITEMS ==========
+                    else if (eq.getEquipmentType().ToLower() == "reusable")
+                    {
+                        // Mark specific EquipmentInstance records as "reserved"
+                        List<EquipmentInstance> availableInstances = EquipmentInstance.getAvailableInstancesByEquipmentId(item.equipmentId);
+
+                        int reservedCount = 0;
+                        foreach (EquipmentInstance instance in availableInstances)
+                        {
+                            if (reservedCount >= item.quantity) break;
+
+                            instance.setStatus("reserved");
+                            instance.setReservationDetailId(rd.getId());
+
+                            reservedCount++;
+                        }
+                    }
+
+                    detailIndex++;
                 }
 
                 return newReservation;
             }
             catch (Exception ex)
             {
+                // =====================================================================
+                // If ANY error occurs, ROLLBACK the transaction
+                // This ensures no orphaned reservation headers are created
+                // =====================================================================
+                if (transaction != null)
+                {
+                    try
+                    {
+                        transaction.Rollback();
+                    }
+                    catch { /* Ignore rollback errors */ }
+                }
+
                 // Surface SP error message as Hebrew string to UI
                 throw new InvalidOperationException($"שגיאה בהזמנת ציוד: {ex.Message}");
+            }
+            finally
+            {
+                // =====================================================================
+                // Clean up: Dispose transaction and close connection
+                // =====================================================================
+                if (transaction != null)
+                {
+                    transaction.Dispose();
+                }
+                if (conn != null && conn.State == System.Data.ConnectionState.Open)
+                {
+                    conn.Close();
+                }
             }
         }
     }

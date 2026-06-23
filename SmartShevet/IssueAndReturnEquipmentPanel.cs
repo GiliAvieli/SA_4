@@ -1,6 +1,7 @@
 using System;
 using System.Windows.Forms;
 using System.Collections.Generic;
+using System.Linq;
 using Microsoft.Data.SqlClient;
 
 namespace SmartShevet
@@ -8,70 +9,15 @@ namespace SmartShevet
     public partial class IssueAndReturnEquipmentPanel : UserControl
     {
         private EquipmentReservation selectedOrder = null;
-        private Panel topPanel;
-        private Button backButton;
 
         public IssueAndReturnEquipmentPanel()
         {
             InitializeComponent();
             this.RightToLeft = RightToLeft.Yes;
 
-            // Create top panel with back button BEFORE other grids
-            createTopPanel();
-
-            // Reposition SplitContainer to be below TopPanel
-            repositionSplitContainer();
-
             initializeMasterGrid();
             initializeDetailGrid();
             loadApprovedOrders();
-        }
-
-        // =====================================================================
-        // Create TopPanel with Back Button
-        // =====================================================================
-        private void createTopPanel()
-        {
-            // Create top panel
-            topPanel = new Panel();
-            topPanel.Dock = DockStyle.Top;
-            topPanel.Height = 60;
-            topPanel.BackColor = System.Drawing.Color.LightGray;
-
-            // Create back button
-            backButton = new Button();
-            backButton.Text = "חזרה";
-            backButton.Location = new System.Drawing.Point(10, 10);
-            backButton.Size = new System.Drawing.Size(100, 40);
-            backButton.Font = new System.Drawing.Font("Arial", 12F, System.Drawing.FontStyle.Bold);
-            backButton.BackColor = System.Drawing.Color.FromArgb(0, 120, 215);
-            backButton.ForeColor = System.Drawing.Color.White;
-            backButton.Cursor = System.Windows.Forms.Cursors.Hand;
-            backButton.Click += new System.EventHandler(this.backButton_Click);
-
-            // Add button to top panel
-            topPanel.Controls.Add(backButton);
-
-            // Add top panel to form FIRST (before SplitContainer)
-            this.Controls.Add(topPanel);
-        }
-
-        // =====================================================================
-        // Reposition SplitContainer to Fill area below TopPanel
-        // =====================================================================
-        private void repositionSplitContainer()
-        {
-            // Find and reposition the split container from Designer
-            foreach (Control ctrl in this.Controls)
-            {
-                if (ctrl is SplitContainer)
-                {
-                    ctrl.Dock = DockStyle.Fill;
-                    // Bring it to back so TopPanel appears on top
-                    ctrl.SendToBack();
-                    break;
-                }
-            }
         }
 
         private void initializeMasterGrid()
@@ -117,7 +63,15 @@ namespace SmartShevet
             itemNameCol.ReadOnly = true;
             detailItemsGridView.Columns.Add(itemNameCol);
 
-            // Column 2: Requested Qty (Read Only)
+            // Column 2: Equipment Type (Read Only)
+            DataGridViewTextBoxColumn typeCol = new DataGridViewTextBoxColumn();
+            typeCol.Name = "סוג";
+            typeCol.HeaderText = "סוג";
+            typeCol.Width = 80;
+            typeCol.ReadOnly = true;
+            detailItemsGridView.Columns.Add(typeCol);
+
+            // Column 3: Requested Qty (Read Only)
             DataGridViewTextBoxColumn requestedQtyCol = new DataGridViewTextBoxColumn();
             requestedQtyCol.Name = "כמות מבוקשת";
             requestedQtyCol.HeaderText = "כמות מבוקשת";
@@ -125,28 +79,28 @@ namespace SmartShevet
             requestedQtyCol.ReadOnly = true;
             detailItemsGridView.Columns.Add(requestedQtyCol);
 
-            // Column 3: Delivered Qty (Numeric Input)
+            // Column 4: Delivered Qty (Numeric Input)
             DataGridViewTextBoxColumn deliveredQtyCol = new DataGridViewTextBoxColumn();
             deliveredQtyCol.Name = "כמות שנמסרה";
             deliveredQtyCol.HeaderText = "כמות שנמסרה";
             deliveredQtyCol.Width = 100;
             detailItemsGridView.Columns.Add(deliveredQtyCol);
 
-            // Column 4: Returned OK Qty (Numeric Input)
+            // Column 5: Returned OK Qty (Numeric Input)
             DataGridViewTextBoxColumn returnedOkQtyCol = new DataGridViewTextBoxColumn();
             returnedOkQtyCol.Name = "כמות שהוחזרה תקינה";
             returnedOkQtyCol.HeaderText = "כמות שהוחזרה תקינה";
             returnedOkQtyCol.Width = 120;
             detailItemsGridView.Columns.Add(returnedOkQtyCol);
 
-            // Column 5: Lost Qty (Numeric Input)
+            // Column 6: Lost Qty (Numeric Input)
             DataGridViewTextBoxColumn lostQtyCol = new DataGridViewTextBoxColumn();
             lostQtyCol.Name = "כמות שאבדה";
             lostQtyCol.HeaderText = "כמות שאבדה";
             lostQtyCol.Width = 100;
             detailItemsGridView.Columns.Add(lostQtyCol);
 
-            // Column 6: Damaged Qty (Numeric Input)
+            // Column 7: Damaged Qty (Numeric Input)
             DataGridViewTextBoxColumn damagedQtyCol = new DataGridViewTextBoxColumn();
             damagedQtyCol.Name = "כמות שנהרסה";
             damagedQtyCol.HeaderText = "כמות שנהרסה";
@@ -195,8 +149,11 @@ namespace SmartShevet
                         string lostQtyStr = issueData["lost_qty"];
                         string damagedQtyStr = issueData["damaged_qty"];
 
+                        string typeDisplay = equipment.getEquipmentType().ToLower() == "consumable" ? "צריכה" : "שניתן לשימוש חוזר";
+
                         int rowIndex = detailItemsGridView.Rows.Add(
                             equipment.getName(),
+                            typeDisplay,
                             detail.getQuantity().ToString(),
                             deliveredQtyStr,
                             returnedOkQtyStr,
@@ -235,10 +192,10 @@ namespace SmartShevet
 
                 if (reader.Read())
                 {
-                    result["issued_qty"] = reader[0].ToString();
-                    result["returned_ok_qty"] = reader[1].ToString();
-                    result["lost_qty"] = reader[2].ToString();
-                    result["damaged_qty"] = reader[3].ToString();
+                    result["issued_qty"] = reader[0] == DBNull.Value ? "0" : reader[0].ToString();
+                    result["returned_ok_qty"] = reader[1] == DBNull.Value ? "0" : reader[1].ToString();
+                    result["lost_qty"] = reader[2] == DBNull.Value ? "0" : reader[2].ToString();
+                    result["damaged_qty"] = reader[3] == DBNull.Value ? "0" : reader[3].ToString();
                 }
             }
             catch
@@ -282,9 +239,139 @@ namespace SmartShevet
                     return;
                 }
 
+                // ========== INVENTORY STATE TRANSITION LOGIC ==========
+                // CRITICAL: Update Equipment quantities BEFORE persisting to database
+                System.Diagnostics.Debug.WriteLine("[saveChangesButton_Click] Starting inventory state transitions");
+
+                foreach (GridRowData row in rowsWithData)
+                {
+                    Equipment equipment = row.Equipment;
+                    int deliveredQty = row.DeliveredQty;
+                    int returnedOkQty = row.ReturnedOkQty;
+                    int lostQty = row.LostQty;
+                    int damagedQty = row.DamagedQty;
+
+                    System.Diagnostics.Debug.WriteLine($"[saveChangesButton_Click] Processing {equipment.getName()}: Delivered={deliveredQty}, ReturnedOK={returnedOkQty}, Lost={lostQty}, Damaged={damagedQty}");
+
+                    // CASE 1: ISSUING EQUIPMENT (Delivery)
+                    // When equipment is issued from a reservation, it moves from "reserved" → "borrowed"
+                    if (deliveredQty > 0)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[saveChangesButton_Click] ISSUING {deliveredQty} units of {equipment.getName()}");
+                        // The equipment was reserved, now it's being delivered/borrowed
+                        // Status changes: reserved → borrowed
+                        // Update Equipment status to reflect the issued state
+                        equipment.setStatus("borrowed");
+                        equipment.setLastUpdated(DateTime.Now);
+                        System.Diagnostics.Debug.WriteLine($"[saveChangesButton_Click] Status changed to 'borrowed'");
+                    }
+
+                    // CASE 2: RETURNING EQUIPMENT (Return)
+                    // When equipment is returned, it moves from "borrowed" back to "available"
+                    if (returnedOkQty > 0)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[saveChangesButton_Click] RETURNING {returnedOkQty} units (OK) of {equipment.getName()}");
+                        // Equipment is being returned in good condition
+                        // Increase available quantity
+                        int currentQty = equipment.getQuantity();
+                        int newQty = currentQty + returnedOkQty;
+                        equipment.setQuantity(newQty);
+                        equipment.setStatus("available");
+                        equipment.setLastUpdated(DateTime.Now);
+                        System.Diagnostics.Debug.WriteLine($"[saveChangesButton_Click] Quantity updated: {currentQty} → {newQty}, Status: available");
+                    }
+
+                    // CASE 3: LOST EQUIPMENT
+                    if (lostQty > 0)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[saveChangesButton_Click] LOST {lostQty} units of {equipment.getName()}");
+                        // Equipment was borrowed but never returned (lost/missing)
+                        // Decrease available quantity (asset loss)
+                        int currentQty = equipment.getQuantity();
+                        int newQty = Math.Max(0, currentQty - lostQty);
+                        equipment.setQuantity(newQty);
+                        equipment.setStatus("lost");
+                        equipment.setLastUpdated(DateTime.Now);
+                        System.Diagnostics.Debug.WriteLine($"[saveChangesButton_Click] Quantity updated: {currentQty} → {newQty}, Status: lost");
+                    }
+
+                    // CASE 4: DAMAGED EQUIPMENT
+                    if (damagedQty > 0)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[saveChangesButton_Click] DAMAGED {damagedQty} units of {equipment.getName()}");
+                        // Equipment was returned but is damaged
+                        // Decrease available quantity (asset impaired)
+                        int currentQty = equipment.getQuantity();
+                        int newQty = Math.Max(0, currentQty - damagedQty);
+                        equipment.setQuantity(newQty);
+                        equipment.setStatus("damaged");
+                        equipment.setLastUpdated(DateTime.Now);
+                        System.Diagnostics.Debug.WriteLine($"[saveChangesButton_Click] Quantity updated: {currentQty} → {newQty}, Status: damaged");
+                    }
+
+                    // CRITICAL: Persist updated Equipment to database
+                    System.Diagnostics.Debug.WriteLine($"[saveChangesButton_Click] Persisting Equipment {equipment.getId()} to database");
+                    equipment.updateEquipment();
+                }
+
+                System.Diagnostics.Debug.WriteLine("[saveChangesButton_Click] ✓ All inventory state transitions completed");
+
+                // ========== PERSIST WAREHOUSE OPERATIONS ==========
                 string operationsJson = buildOperationsJson(rowsWithData);
                 executeWarehouseOperation(orderId, operationsJson);
 
+                // ========== STATUS ROLLUP: Update Equipment based on Instance counts ==========
+                System.Diagnostics.Debug.WriteLine("[saveChangesButton_Click] Starting instance status rollup");
+
+                // Collect all distinct Equipment IDs affected in this transaction
+                HashSet<int> affectedEquipmentIds = new HashSet<int>();
+                foreach (GridRowData row in rowsWithData)
+                {
+                    affectedEquipmentIds.Add(row.Equipment.getId());
+                }
+
+                System.Diagnostics.Debug.WriteLine($"[saveChangesButton_Click] Rolling up {affectedEquipmentIds.Count} equipment items");
+
+                // For each affected Equipment, count instances by status and update parent
+                foreach (int equipmentId in affectedEquipmentIds)
+                {
+                    Equipment equipment = Equipment.seekEquipment(equipmentId);
+                    if (equipment == null)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[saveChangesButton_Click] WARNING: Equipment {equipmentId} not found");
+                        continue;
+                    }
+
+                    // Fetch all instances for this equipment
+                    List<EquipmentInstance> allInstances = EquipmentInstance.getInstancesByEquipmentId(equipmentId);
+
+                    // Count instances by status
+                    int reservedCount = allInstances.Count(inst => inst.getStatus().ToLower() == "reserved");
+                    int borrowedCount = allInstances.Count(inst => inst.getStatus().ToLower() == "borrowed");
+                    int totalCount = allInstances.Count;
+                    int availableCount = totalCount - reservedCount - borrowedCount;
+
+                    System.Diagnostics.Debug.WriteLine($"[saveChangesButton_Click] Equipment {equipmentId} ({equipment.getName()}): Reserved={reservedCount}, Borrowed={borrowedCount}, Available={availableCount}, Total={totalCount}");
+
+                    // Update Equipment's total quantity to match instance count (for reusable items)
+                    // Instance statuses (reserved, borrowed, available, etc.) are tracked at instance level
+                    equipment.setQuantity(totalCount);  // Total always equals instance count
+                    equipment.setLastUpdated(DateTime.Now);
+
+                    // Persist the updated Equipment to database
+                    equipment.updateEquipment();
+                    System.Diagnostics.Debug.WriteLine($"[saveChangesButton_Click] ✓ Updated Equipment {equipmentId} with instance counts");
+                }
+
+                System.Diagnostics.Debug.WriteLine("[saveChangesButton_Click] ✓ Status rollup completed");
+
+                // ========== GOLDEN SYNCHRONIZATION: FORCE RELOAD FROM DATABASE ==========
+                System.Diagnostics.Debug.WriteLine("[saveChangesButton_Click] FORCE RELOAD: Rebuilding in-memory lists from database");
+                Equipment.initEquipments();
+                EquipmentInstance.initEquipmentInstances();
+                System.Diagnostics.Debug.WriteLine("[saveChangesButton_Click] ✓ In-memory lists rebuilt successfully");
+
+                // ========== RELOAD & REFRESH ==========
                 reloadAllInMemoryLists();
                 refreshMasterGrid();
                 clearDetailGrid();
@@ -294,6 +381,8 @@ namespace SmartShevet
             catch (Exception ex)
             {
                 MessageBox.Show($"שגיאה בשמירה: {ex.Message}", "שגיאה", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                System.Diagnostics.Debug.WriteLine($"[saveChangesButton_Click] ✗ Exception: {ex}");
+                return;  // Exit immediately after error — do NOT show success message
             }
         }
 
@@ -315,10 +404,10 @@ namespace SmartShevet
             {
                 if (gridRow.IsNewRow) continue;
 
-                string deliveredQtyStr = gridRow.Cells[2].Value?.ToString()?.Trim() ?? "";
-                string returnedOkQtyStr = gridRow.Cells[3].Value?.ToString()?.Trim() ?? "";
-                string lostQtyStr = gridRow.Cells[4].Value?.ToString()?.Trim() ?? "";
-                string damagedQtyStr = gridRow.Cells[5].Value?.ToString()?.Trim() ?? "";
+                string deliveredQtyStr = gridRow.Cells[3].Value?.ToString()?.Trim() ?? "";
+                string returnedOkQtyStr = gridRow.Cells[4].Value?.ToString()?.Trim() ?? "";
+                string lostQtyStr = gridRow.Cells[5].Value?.ToString()?.Trim() ?? "";
+                string damagedQtyStr = gridRow.Cells[6].Value?.ToString()?.Trim() ?? "";
 
                 if (string.IsNullOrEmpty(deliveredQtyStr)) deliveredQtyStr = "0";
                 if (string.IsNullOrEmpty(returnedOkQtyStr)) returnedOkQtyStr = "0";
@@ -408,9 +497,21 @@ namespace SmartShevet
 
         private void reloadAllInMemoryLists()
         {
+            System.Diagnostics.Debug.WriteLine("[reloadAllInMemoryLists] Starting reload");
+
             EquipmentReservation.initEquipmentReservations();
+            System.Diagnostics.Debug.WriteLine("[reloadAllInMemoryLists] EquipmentReservations reloaded");
+
             EquipmentIssue.initEquipmentIssues();
+            System.Diagnostics.Debug.WriteLine("[reloadAllInMemoryLists] EquipmentIssues reloaded");
+
             Equipment.initEquipments();
+            System.Diagnostics.Debug.WriteLine("[reloadAllInMemoryLists] Equipment reloaded");
+
+            EquipmentInstance.initEquipmentInstances();
+            System.Diagnostics.Debug.WriteLine("[reloadAllInMemoryLists] EquipmentInstances reloaded");
+
+            System.Diagnostics.Debug.WriteLine("[reloadAllInMemoryLists] ✓ All in-memory lists reloaded");
         }
 
         private void refreshMasterGrid()
@@ -430,6 +531,32 @@ namespace SmartShevet
                 mainForm.showPanel(mainForm.previousPanel);
             else
                 mainForm.showPanel(new LoginPanel());
+        }
+
+        // ========== PUBLIC REFRESH METHOD FOR CROSS-PANEL SYNCHRONIZATION ==========
+        // Call this when returning to this panel after other panels modify equipment
+        public void RefreshAllData()
+        {
+            try
+            {
+                System.Diagnostics.Debug.WriteLine("[IssueReturn.RefreshAllData] Starting refresh");
+
+                // Reload equipment and reservations from database
+                reloadAllInMemoryLists();
+
+                // Refresh the master grid with latest approved orders
+                refreshMasterGrid();
+
+                // Clear detail grid
+                clearDetailGrid();
+
+                System.Diagnostics.Debug.WriteLine("[IssueReturn.RefreshAllData] ✓ Refresh completed");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[IssueReturn.RefreshAllData] ✗ Exception: {ex}");
+                MessageBox.Show($"שגיאה בטעינת נתונים: {ex.Message}", "שגיאה", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
     }
 }

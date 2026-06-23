@@ -21,12 +21,18 @@ namespace SmartShevet
         // =====================================================================
 
         public static List<Equipment> Equipments;
+        public static List<EquipmentInstance> EquipmentInstances;
         public static List<SeniorScout> SeniorScouts;
         public static List<WarehouseStaffMember> WarehouseStaffMembers;
         public static List<SeniorCoordinator> SeniorCoordinators;
         public static List<EquipmentReservation> EquipmentReservations;
         public static List<EquipmentIssue> EquipmentIssues;
         public static List<ReservationDetails> ReservationDetailsList;
+
+        // =====================================================================
+        // Logged-in user tracking
+        // =====================================================================
+        public static int LoggedInUserId = 1;  // Track the authenticated user's ID
 
         // =====================================================================
         // אתחול כל הרשימות
@@ -43,12 +49,13 @@ namespace SmartShevet
         public static void initLists()
         {
             Equipment.initEquipments();                    // 1. ציוד (בסיסי)
-            SeniorScout.initSeniorScouts();                // 2. סקאוט בכיר (בסיסי)
-            WarehouseStaffMember.initWarehouseStaffMembers();  // 3. חברי צוות מחסן (יורשים מ-SeniorScout)
-            SeniorCoordinator.initSeniorCoordinators();    // 4. קואורדינטור בכיר (יורשים מ-SeniorScout)
-            EquipmentReservation.initEquipmentReservations();  // 5. הזמנות ציוד (FK ל-SeniorScout)
-            EquipmentIssue.initEquipmentIssues();          // 6. בעיות ציוד (FK ל-Equipment, SeniorScout, EquipmentReservation)
-            ReservationDetails.initReservationDetails();   // 7. פרטי הזמנה (association class)
+            EquipmentInstance.initEquipmentInstances();    // 2. יחידות ציוד בודדות לציוד הניתן לשימוש חוזר
+            SeniorScout.initSeniorScouts();                // 3. סקאוט בכיר (בסיסי)
+            WarehouseStaffMember.initWarehouseStaffMembers();  // 4. חברי צוות מחסן (יורשים מ-SeniorScout)
+            SeniorCoordinator.initSeniorCoordinators();    // 5. קואורדינטור בכיר (יורשים מ-SeniorScout)
+            EquipmentReservation.initEquipmentReservations();  // 6. הזמנות ציוד (FK ל-SeniorScout)
+            EquipmentIssue.initEquipmentIssues();          // 7. בעיות ציוד (FK ל-Equipment, SeniorScout, EquipmentReservation)
+            ReservationDetails.initReservationDetails();   // 8. פרטי הזמנה (association class)
         }
 
         // =====================================================================
