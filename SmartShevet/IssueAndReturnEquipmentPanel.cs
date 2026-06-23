@@ -8,14 +8,70 @@ namespace SmartShevet
     public partial class IssueAndReturnEquipmentPanel : UserControl
     {
         private EquipmentReservation selectedOrder = null;
+        private Panel topPanel;
+        private Button backButton;
 
         public IssueAndReturnEquipmentPanel()
         {
             InitializeComponent();
             this.RightToLeft = RightToLeft.Yes;
+
+            // Create top panel with back button BEFORE other grids
+            createTopPanel();
+
+            // Reposition SplitContainer to be below TopPanel
+            repositionSplitContainer();
+
             initializeMasterGrid();
             initializeDetailGrid();
             loadApprovedOrders();
+        }
+
+        // =====================================================================
+        // Create TopPanel with Back Button
+        // =====================================================================
+        private void createTopPanel()
+        {
+            // Create top panel
+            topPanel = new Panel();
+            topPanel.Dock = DockStyle.Top;
+            topPanel.Height = 60;
+            topPanel.BackColor = System.Drawing.Color.LightGray;
+
+            // Create back button
+            backButton = new Button();
+            backButton.Text = "חזרה";
+            backButton.Location = new System.Drawing.Point(10, 10);
+            backButton.Size = new System.Drawing.Size(100, 40);
+            backButton.Font = new System.Drawing.Font("Arial", 12F, System.Drawing.FontStyle.Bold);
+            backButton.BackColor = System.Drawing.Color.FromArgb(0, 120, 215);
+            backButton.ForeColor = System.Drawing.Color.White;
+            backButton.Cursor = System.Windows.Forms.Cursors.Hand;
+            backButton.Click += new System.EventHandler(this.backButton_Click);
+
+            // Add button to top panel
+            topPanel.Controls.Add(backButton);
+
+            // Add top panel to form FIRST (before SplitContainer)
+            this.Controls.Add(topPanel);
+        }
+
+        // =====================================================================
+        // Reposition SplitContainer to Fill area below TopPanel
+        // =====================================================================
+        private void repositionSplitContainer()
+        {
+            // Find and reposition the split container from Designer
+            foreach (Control ctrl in this.Controls)
+            {
+                if (ctrl is SplitContainer)
+                {
+                    ctrl.Dock = DockStyle.Fill;
+                    // Bring it to back so TopPanel appears on top
+                    ctrl.SendToBack();
+                    break;
+                }
+            }
         }
 
         private void initializeMasterGrid()
@@ -61,7 +117,7 @@ namespace SmartShevet
             itemNameCol.ReadOnly = true;
             detailItemsGridView.Columns.Add(itemNameCol);
 
-            // Column 2: Requested Qty (Read Only) - CRITICAL
+            // Column 2: Requested Qty (Read Only)
             DataGridViewTextBoxColumn requestedQtyCol = new DataGridViewTextBoxColumn();
             requestedQtyCol.Name = "כמות מבוקשת";
             requestedQtyCol.HeaderText = "כמות מבוקשת";
@@ -113,7 +169,6 @@ namespace SmartShevet
                         requester?.getName() ?? "Unknown"
                     );
 
-                    // Store reservation object in row Tag for later retrieval
                     masterOrdersGridView.Rows[rowIndex].Tag = reservation;
                 }
             }
@@ -125,7 +180,6 @@ namespace SmartShevet
 
             if (selectedOrder == null) return;
 
-            // Find all ReservationDetails for this order
             foreach (ReservationDetails detail in Program.ReservationDetailsList)
             {
                 if (detail.getReservation().getId() == selectedOrder.getId())
@@ -133,20 +187,66 @@ namespace SmartShevet
                     Equipment equipment = detail.getEquipment();
                     if (equipment != null)
                     {
+                        // Load existing EquipmentIssue values from database
+                        var issueData = getEquipmentIssueData(detail.getId());
+
+                        string deliveredQtyStr = issueData["issued_qty"];
+                        string returnedOkQtyStr = issueData["returned_ok_qty"];
+                        string lostQtyStr = issueData["lost_qty"];
+                        string damagedQtyStr = issueData["damaged_qty"];
+
                         int rowIndex = detailItemsGridView.Rows.Add(
-                            equipment.getName(),                    // שם פריט
-                            detail.getQuantity().ToString(),        // כמות מבוקשת - READ ONLY
-                            "0",                                    // כמות שנמסרה (delivered qty)
-                            "0",                                    // כמות שהוחזרה תקינה (returned OK qty)
-                            "0",                                    // כמות שאבדה (lost qty)
-                            "0"                                     // כמות שנהרסה (damaged qty)
+                            equipment.getName(),
+                            detail.getQuantity().ToString(),
+                            deliveredQtyStr,
+                            returnedOkQtyStr,
+                            lostQtyStr,
+                            damagedQtyStr
                         );
 
-                        // Store detail in row Tag for save operation
                         detailItemsGridView.Rows[rowIndex].Tag = detail;
                     }
                 }
             }
+        }
+
+        private Dictionary<string, string> getEquipmentIssueData(int reservationDetailId)
+        {
+            Dictionary<string, string> result = new Dictionary<string, string>
+            {
+                { "issued_qty", "0" },
+                { "returned_ok_qty", "0" },
+                { "lost_qty", "0" },
+                { "damaged_qty", "0" }
+            };
+
+            try
+            {
+                SqlCommand cmd = new SqlCommand();
+                cmd.CommandText = @"
+                    SELECT issued_qty, returned_ok_qty, lost_qty, damaged_qty
+                    FROM EquipmentIssue
+                    WHERE reservation_detail_id = @detailId
+                ";
+                cmd.Parameters.AddWithValue("@detailId", reservationDetailId);
+
+                SQL_CON SC = new SQL_CON();
+                SqlDataReader reader = SC.execute_query(cmd);
+
+                if (reader.Read())
+                {
+                    result["issued_qty"] = reader[0].ToString();
+                    result["returned_ok_qty"] = reader[1].ToString();
+                    result["lost_qty"] = reader[2].ToString();
+                    result["damaged_qty"] = reader[3].ToString();
+                }
+            }
+            catch
+            {
+                // If query fails, return defaults
+            }
+
+            return result;
         }
 
         private void masterOrdersGridView_SelectionChanged(object sender, EventArgs e)
@@ -173,95 +273,155 @@ namespace SmartShevet
 
             try
             {
-                // =====================================================================
-                // READ GRID DATA AND BUILD JSON ARRAY
-                // =====================================================================
-                System.Text.StringBuilder jsonBuilder = new System.Text.StringBuilder("[");
-                bool hasData = false;
+                int orderId = selectedOrder.getId();
+                List<GridRowData> rowsWithData = readDetailGridData();
 
-                foreach (DataGridViewRow gridRow in detailItemsGridView.Rows)
-                {
-                    if (gridRow.IsNewRow) continue;
-
-                    // Read quantities from grid columns
-                    string deliveredQtyStr = gridRow.Cells[2].Value?.ToString() ?? "0";
-                    string returnedOkQtyStr = gridRow.Cells[3].Value?.ToString() ?? "0";
-                    string lostQtyStr = gridRow.Cells[4].Value?.ToString() ?? "0";
-                    string damagedQtyStr = gridRow.Cells[5].Value?.ToString() ?? "0";
-
-                    // Validate numeric input
-                    if (!int.TryParse(deliveredQtyStr, out int deliveredQty) ||
-                        !int.TryParse(returnedOkQtyStr, out int returnedOkQty) ||
-                        !int.TryParse(lostQtyStr, out int lostQty) ||
-                        !int.TryParse(damagedQtyStr, out int damagedQty))
-                    {
-                        MessageBox.Show("כל הכמויות חייבות להיות מספרים שלמים", "שגיאת קלט", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                        return;
-                    }
-
-                    // Skip rows with no operations
-                    if (deliveredQty == 0 && returnedOkQty == 0 && lostQty == 0 && damagedQty == 0)
-                        continue;
-
-                    ReservationDetails detail = gridRow.Tag as ReservationDetails;
-                    if (detail == null) continue;
-
-                    Equipment equipment = detail.getEquipment();
-                    if (equipment == null) continue;
-
-                    // Build JSON object for this row
-                    if (hasData) jsonBuilder.Append(",");
-                    jsonBuilder.Append($"{{\"equipmentId\":{equipment.getId()},");
-                    jsonBuilder.Append($"\"deliveredQty\":{deliveredQty},");
-                    jsonBuilder.Append($"\"returnedOkQty\":{returnedOkQty},");
-                    jsonBuilder.Append($"\"lostQty\":{lostQty},");
-                    jsonBuilder.Append($"\"damagedQty\":{damagedQty}}}");
-                    hasData = true;
-                }
-
-                jsonBuilder.Append("]");
-
-                // Validate that at least one operation was entered (delivered qty OR return data)
-                if (!hasData)
+                if (rowsWithData.Count == 0)
                 {
                     MessageBox.Show("הזן לפחות כמות הנפקה או החזרה אחת", "שגיאה", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     return;
                 }
 
-                // Note: It's OK to have ONLY delivered qty (phase 1) or ONLY return data (phase 2)
-                // The SP will handle both cases correctly
+                string operationsJson = buildOperationsJson(rowsWithData);
+                executeWarehouseOperation(orderId, operationsJson);
 
-                // =====================================================================
-                // CALL STORED PROCEDURE
-                // =====================================================================
-                string operationsJson = jsonBuilder.ToString();
+                reloadAllInMemoryLists();
+                refreshMasterGrid();
+                clearDetailGrid();
 
-                SqlCommand cmd = new SqlCommand();
-                cmd.CommandText = "EXECUTE sp_process_warehouse_operation @equipmentreservation_id, @operationsJson";
-                cmd.Parameters.AddWithValue("@equipmentreservation_id", selectedOrder.getId());
-                cmd.Parameters.AddWithValue("@operationsJson", operationsJson);
-
-                SQL_CON SC = new SQL_CON();
-                SC.execute_non_query(cmd);
-
-                // =====================================================================
-                // REFRESH IN-MEMORY STATE FROM DATABASE
-                // =====================================================================
-                // SP updated the database, now reload affected entities from DB
-                // This ensures the UI reflects the latest state
-                EquipmentReservation.initEquipmentReservations();
-                EquipmentIssue.initEquipmentIssues();
-                Equipment.initEquipments();
-
-                MessageBox.Show($"הזמנה #{selectedOrder.getId()} עודכנה בהצלחה!", "הצלחה", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                loadApprovedOrders();
-                detailItemsGridView.Rows.Clear();
-                selectedOrder = null;
+                MessageBox.Show($"הזמנה #{orderId} עודכנה בהצלחה!", "הצלחה", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception ex)
             {
                 MessageBox.Show($"שגיאה בשמירה: {ex.Message}", "שגיאה", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
+        }
+
+        private class GridRowData
+        {
+            public Equipment Equipment { get; set; }
+            public ReservationDetails Detail { get; set; }
+            public int DeliveredQty { get; set; }
+            public int ReturnedOkQty { get; set; }
+            public int LostQty { get; set; }
+            public int DamagedQty { get; set; }
+        }
+
+        private List<GridRowData> readDetailGridData()
+        {
+            List<GridRowData> result = new List<GridRowData>();
+
+            foreach (DataGridViewRow gridRow in detailItemsGridView.Rows)
+            {
+                if (gridRow.IsNewRow) continue;
+
+                string deliveredQtyStr = gridRow.Cells[2].Value?.ToString()?.Trim() ?? "";
+                string returnedOkQtyStr = gridRow.Cells[3].Value?.ToString()?.Trim() ?? "";
+                string lostQtyStr = gridRow.Cells[4].Value?.ToString()?.Trim() ?? "";
+                string damagedQtyStr = gridRow.Cells[5].Value?.ToString()?.Trim() ?? "";
+
+                if (string.IsNullOrEmpty(deliveredQtyStr)) deliveredQtyStr = "0";
+                if (string.IsNullOrEmpty(returnedOkQtyStr)) returnedOkQtyStr = "0";
+                if (string.IsNullOrEmpty(lostQtyStr)) lostQtyStr = "0";
+                if (string.IsNullOrEmpty(damagedQtyStr)) damagedQtyStr = "0";
+
+                if (!int.TryParse(deliveredQtyStr, out int deliveredQty))
+                {
+                    MessageBox.Show($"'כמות שנמסרה' חייבת להיות מספר שלם בשורה", "שגיאת קלט", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return new List<GridRowData>();
+                }
+
+                if (!int.TryParse(returnedOkQtyStr, out int returnedOkQty))
+                {
+                    MessageBox.Show($"'כמות שהוחזרה תקינה' חייבת להיות מספר שלם בשורה", "שגיאת קלט", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return new List<GridRowData>();
+                }
+
+                if (!int.TryParse(lostQtyStr, out int lostQty))
+                {
+                    MessageBox.Show($"'כמות שאבדה' חייבת להיות מספר שלם בשורה", "שגיאת קלט", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return new List<GridRowData>();
+                }
+
+                if (!int.TryParse(damagedQtyStr, out int damagedQty))
+                {
+                    MessageBox.Show($"'כמות שנהרסה' חייבת להיות מספר שלם בשורה", "שגיאת קלט", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return new List<GridRowData>();
+                }
+
+                if (deliveredQty == 0 && returnedOkQty == 0 && lostQty == 0 && damagedQty == 0)
+                    continue;
+
+                ReservationDetails detail = gridRow.Tag as ReservationDetails;
+                if (detail == null) continue;
+
+                Equipment equipment = detail.getEquipment();
+                if (equipment == null) continue;
+
+                result.Add(new GridRowData
+                {
+                    Equipment = equipment,
+                    Detail = detail,
+                    DeliveredQty = deliveredQty,
+                    ReturnedOkQty = returnedOkQty,
+                    LostQty = lostQty,
+                    DamagedQty = damagedQty
+                });
+            }
+
+            return result;
+        }
+
+        private string buildOperationsJson(List<GridRowData> rows)
+        {
+            System.Text.StringBuilder jsonBuilder = new System.Text.StringBuilder("[");
+
+            for (int i = 0; i < rows.Count; i++)
+            {
+                GridRowData row = rows[i];
+
+                if (i > 0) jsonBuilder.Append(",");
+
+                jsonBuilder.Append("{");
+                jsonBuilder.Append($"\"equipmentId\":{row.Equipment.getId()},");
+                jsonBuilder.Append($"\"deliveredQty\":{row.DeliveredQty},");
+                jsonBuilder.Append($"\"returnedOkQty\":{row.ReturnedOkQty},");
+                jsonBuilder.Append($"\"lostQty\":{row.LostQty},");
+                jsonBuilder.Append($"\"damagedQty\":{row.DamagedQty}");
+                jsonBuilder.Append("}");
+            }
+
+            jsonBuilder.Append("]");
+            return jsonBuilder.ToString();
+        }
+
+        private void executeWarehouseOperation(int reservationId, string operationsJson)
+        {
+            SqlCommand cmd = new SqlCommand();
+            cmd.CommandText = "EXECUTE sp_process_warehouse_operation @equipmentreservation_id, @operationsJson";
+            cmd.Parameters.AddWithValue("@equipmentreservation_id", reservationId);
+            cmd.Parameters.AddWithValue("@operationsJson", operationsJson);
+
+            SQL_CON SC = new SQL_CON();
+            SC.execute_non_query(cmd);
+        }
+
+        private void reloadAllInMemoryLists()
+        {
+            EquipmentReservation.initEquipmentReservations();
+            EquipmentIssue.initEquipmentIssues();
+            Equipment.initEquipments();
+        }
+
+        private void refreshMasterGrid()
+        {
+            loadApprovedOrders();
+        }
+
+        private void clearDetailGrid()
+        {
+            detailItemsGridView.Rows.Clear();
+            selectedOrder = null;
         }
 
         private void backButton_Click(object sender, EventArgs e)

@@ -4,7 +4,6 @@ namespace SmartShevet
     {
         private System.ComponentModel.IContainer components = null;
         private System.Windows.Forms.Label titleLabel;
-        private System.Windows.Forms.Button backButton;
         private System.Windows.Forms.SplitContainer splitContainer;
         private System.Windows.Forms.Label masterLabel;
         private System.Windows.Forms.DataGridView masterOrdersGridView;
@@ -24,7 +23,6 @@ namespace SmartShevet
         private void InitializeComponent()
         {
             this.titleLabel = new System.Windows.Forms.Label();
-            this.backButton = new System.Windows.Forms.Button();
             this.splitContainer = new System.Windows.Forms.SplitContainer();
             this.masterLabel = new System.Windows.Forms.Label();
             this.masterOrdersGridView = new System.Windows.Forms.DataGridView();
@@ -47,14 +45,6 @@ namespace SmartShevet
             this.titleLabel.Size = new System.Drawing.Size(100, 25);
             this.titleLabel.TabIndex = 0;
             this.titleLabel.Text = "הוצאה והחזרה";
-
-            // Back Button
-            this.backButton.Location = new System.Drawing.Point(20, 15);
-            this.backButton.Name = "backButton";
-            this.backButton.Size = new System.Drawing.Size(75, 30);
-            this.backButton.TabIndex = 1;
-            this.backButton.Text = "חזרה";
-            this.backButton.Click += new System.EventHandler(this.backButton_Click);
 
             // Split Container
             this.splitContainer.Dock = System.Windows.Forms.DockStyle.Fill;
@@ -118,7 +108,6 @@ namespace SmartShevet
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.Controls.Add(this.splitContainer);
             this.Controls.Add(this.titleLabel);
-            this.Controls.Add(this.backButton);
             this.Name = "IssueAndReturnEquipmentPanel";
             this.Size = new System.Drawing.Size(800, 600);
             ((System.ComponentModel.ISupportInitialize)(this.splitContainer)).EndInit();
