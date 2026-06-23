@@ -222,6 +222,8 @@ namespace SmartShevet
 
         private void saveChangesButton_Click(object sender, EventArgs e)
         {
+            bool isSuccess = false;
+
             if (selectedOrder == null)
             {
                 MessageBox.Show("בחר הזמנה לשמירה", "שגיאה", MessageBoxButtons.OK, MessageBoxIcon.Warning);
@@ -239,91 +241,202 @@ namespace SmartShevet
                     return;
                 }
 
-                // ========== INVENTORY STATE TRANSITION LOGIC ==========
-                // CRITICAL: Update Equipment quantities BEFORE persisting to database
-                System.Diagnostics.Debug.WriteLine("[saveChangesButton_Click] Starting inventory state transitions");
+                System.Diagnostics.Debug.WriteLine("[saveChangesButton_Click] ========== SAVE OPERATION START ==========");
+                System.Diagnostics.Debug.WriteLine($"[saveChangesButton_Click] Processing {rowsWithData.Count} equipment rows for order #{orderId}");
+
+                // ========== STEP 1: INSTANCE STATE TRANSITIONS (CRITICAL FOR REUSABLE ITEMS) ==========
+                System.Diagnostics.Debug.WriteLine("[saveChangesButton_Click] STEP 1: Transitioning instance statuses");
 
                 foreach (GridRowData row in rowsWithData)
                 {
                     Equipment equipment = row.Equipment;
-                    int deliveredQty = row.DeliveredQty;
-                    int returnedOkQty = row.ReturnedOkQty;
-                    int lostQty = row.LostQty;
-                    int damagedQty = row.DamagedQty;
+                    int equipmentId = equipment.getId();
+                    bool isReusable = equipment.getEquipmentType().ToLower() == "reusable";
 
-                    System.Diagnostics.Debug.WriteLine($"[saveChangesButton_Click] Processing {equipment.getName()}: Delivered={deliveredQty}, ReturnedOK={returnedOkQty}, Lost={lostQty}, Damaged={damagedQty}");
+                    System.Diagnostics.Debug.WriteLine($"[saveChangesButton_Click] Processing {equipment.getName()} (ID={equipmentId}, Reusable={isReusable})");
 
-                    // CASE 1: ISSUING EQUIPMENT (Delivery)
-                    // When equipment is issued from a reservation, it moves from "reserved" → "borrowed"
-                    if (deliveredQty > 0)
+                    // CASE 1: ISSUING EQUIPMENT (reserved → borrowed)
+                    if (row.DeliveredQty > 0)
                     {
-                        System.Diagnostics.Debug.WriteLine($"[saveChangesButton_Click] ISSUING {deliveredQty} units of {equipment.getName()}");
-                        // The equipment was reserved, now it's being delivered/borrowed
-                        // Status changes: reserved → borrowed
-                        // Update Equipment status to reflect the issued state
-                        equipment.setStatus("borrowed");
-                        equipment.setLastUpdated(DateTime.Now);
-                        System.Diagnostics.Debug.WriteLine($"[saveChangesButton_Click] Status changed to 'borrowed'");
+                        System.Diagnostics.Debug.WriteLine($"[saveChangesButton_Click] ISSUING {row.DeliveredQty} units of {equipment.getName()}");
+
+                        if (isReusable)
+                        {
+                            // For reusable items: find reserved instances and change to borrowed
+                            List<EquipmentInstance> reservedInstances = EquipmentInstance.getInstancesByEquipmentId(equipmentId)
+                                .Where(inst => inst.getStatus().ToLower() == "reserved")
+                                .ToList();
+
+                            System.Diagnostics.Debug.WriteLine($"[saveChangesButton_Click] Found {reservedInstances.Count} reserved instances");
+
+                            // Transition the first DeliveredQty instances from reserved → borrowed
+                            for (int i = 0; i < Math.Min(row.DeliveredQty, reservedInstances.Count); i++)
+                            {
+                                try
+                                {
+                                    EquipmentInstance inst = reservedInstances[i];
+                                    System.Diagnostics.Debug.WriteLine($"[saveChangesButton_Click] Transitioning instance {inst.getSerialNumber()}: reserved → borrowed");
+                                    inst.setStatus("borrowed");
+                                    inst.updateEquipmentInstance();  // Persist to DB
+                                    System.Diagnostics.Debug.WriteLine($"[saveChangesButton_Click] ✓ Instance {inst.getSerialNumber()} updated to borrowed");
+                                }
+                                catch (Exception ex)
+                                {
+                                    System.Diagnostics.Debug.WriteLine($"[saveChangesButton_Click] ✗ Failed to update instance: {ex.Message}");
+                                    throw new Exception($"Failed to update instance status to borrowed: {ex.Message}", ex);
+                                }
+                            }
+                        }
+                        else
+                        {
+                            // For consumable items: reduce quantity when issued
+                            int currentQty = equipment.getQuantity();
+                            int newQty = Math.Max(0, currentQty - row.DeliveredQty);
+                            equipment.setQuantity(newQty);
+                            equipment.setStatus("borrowed");
+                            System.Diagnostics.Debug.WriteLine($"[saveChangesButton_Click] Consumable: Quantity {currentQty} → {newQty}");
+                        }
                     }
 
-                    // CASE 2: RETURNING EQUIPMENT (Return)
-                    // When equipment is returned, it moves from "borrowed" back to "available"
-                    if (returnedOkQty > 0)
+                    // CASE 2: RETURNING EQUIPMENT (borrowed → available)
+                    if (row.ReturnedOkQty > 0)
                     {
-                        System.Diagnostics.Debug.WriteLine($"[saveChangesButton_Click] RETURNING {returnedOkQty} units (OK) of {equipment.getName()}");
-                        // Equipment is being returned in good condition
-                        // Increase available quantity
-                        int currentQty = equipment.getQuantity();
-                        int newQty = currentQty + returnedOkQty;
-                        equipment.setQuantity(newQty);
-                        equipment.setStatus("available");
-                        equipment.setLastUpdated(DateTime.Now);
-                        System.Diagnostics.Debug.WriteLine($"[saveChangesButton_Click] Quantity updated: {currentQty} → {newQty}, Status: available");
+                        System.Diagnostics.Debug.WriteLine($"[saveChangesButton_Click] RETURNING {row.ReturnedOkQty} units (OK) of {equipment.getName()}");
+
+                        if (isReusable)
+                        {
+                            // For reusable items: find borrowed instances and change back to available
+                            List<EquipmentInstance> borrowedInstances = EquipmentInstance.getInstancesByEquipmentId(equipmentId)
+                                .Where(inst => inst.getStatus().ToLower() == "borrowed")
+                                .ToList();
+
+                            System.Diagnostics.Debug.WriteLine($"[saveChangesButton_Click] Found {borrowedInstances.Count} borrowed instances");
+
+                            // Transition the first ReturnedOkQty instances from borrowed → available
+                            for (int i = 0; i < Math.Min(row.ReturnedOkQty, borrowedInstances.Count); i++)
+                            {
+                                try
+                                {
+                                    EquipmentInstance inst = borrowedInstances[i];
+                                    System.Diagnostics.Debug.WriteLine($"[saveChangesButton_Click] Transitioning instance {inst.getSerialNumber()}: borrowed → available");
+                                    inst.setStatus("available");
+                                    inst.updateEquipmentInstance();  // Persist to DB
+                                    System.Diagnostics.Debug.WriteLine($"[saveChangesButton_Click] ✓ Instance {inst.getSerialNumber()} updated to available");
+                                }
+                                catch (Exception ex)
+                                {
+                                    System.Diagnostics.Debug.WriteLine($"[saveChangesButton_Click] ✗ Failed to update instance: {ex.Message}");
+                                    throw new Exception($"Failed to update instance status to available: {ex.Message}", ex);
+                                }
+                            }
+                        }
+                        else
+                        {
+                            // For consumable: increase available quantity
+                            int currentQty = equipment.getQuantity();
+                            int newQty = currentQty + row.ReturnedOkQty;
+                            equipment.setQuantity(newQty);
+                            equipment.setStatus("available");
+                            equipment.setLastUpdated(DateTime.Now);
+                        }
                     }
 
-                    // CASE 3: LOST EQUIPMENT
-                    if (lostQty > 0)
+                    // CASE 3: LOST EQUIPMENT (borrowed → lost)
+                    if (row.LostQty > 0)
                     {
-                        System.Diagnostics.Debug.WriteLine($"[saveChangesButton_Click] LOST {lostQty} units of {equipment.getName()}");
-                        // Equipment was borrowed but never returned (lost/missing)
-                        // Decrease available quantity (asset loss)
-                        int currentQty = equipment.getQuantity();
-                        int newQty = Math.Max(0, currentQty - lostQty);
-                        equipment.setQuantity(newQty);
-                        equipment.setStatus("lost");
-                        equipment.setLastUpdated(DateTime.Now);
-                        System.Diagnostics.Debug.WriteLine($"[saveChangesButton_Click] Quantity updated: {currentQty} → {newQty}, Status: lost");
+                        System.Diagnostics.Debug.WriteLine($"[saveChangesButton_Click] LOST {row.LostQty} units of {equipment.getName()}");
+
+                        if (isReusable)
+                        {
+                            // For reusable items: mark specific instances as lost
+                            List<EquipmentInstance> borrowedInstances = EquipmentInstance.getInstancesByEquipmentId(equipmentId)
+                                .Where(inst => inst.getStatus().ToLower() == "borrowed")
+                                .ToList();
+
+                            for (int i = 0; i < Math.Min(row.LostQty, borrowedInstances.Count); i++)
+                            {
+                                try
+                                {
+                                    EquipmentInstance inst = borrowedInstances[i];
+                                    System.Diagnostics.Debug.WriteLine($"[saveChangesButton_Click] Marking instance {inst.getSerialNumber()} as lost");
+                                    inst.setStatus("lost");
+                                    inst.updateEquipmentInstance();  // Persist to DB
+                                    System.Diagnostics.Debug.WriteLine($"[saveChangesButton_Click] ✓ Instance {inst.getSerialNumber()} marked as lost");
+                                }
+                                catch (Exception ex)
+                                {
+                                    System.Diagnostics.Debug.WriteLine($"[saveChangesButton_Click] ✗ Failed to mark instance as lost: {ex.Message}");
+                                    throw new Exception($"Failed to mark instance as lost: {ex.Message}", ex);
+                                }
+                            }
+                        }
+                        else
+                        {
+                            // For consumable items: decrease quantity (asset loss)
+                            int currentQty = equipment.getQuantity();
+                            int newQty = Math.Max(0, currentQty - row.LostQty);
+                            equipment.setQuantity(newQty);
+                            equipment.setStatus("lost");
+                            equipment.setLastUpdated(DateTime.Now);
+                        }
                     }
 
-                    // CASE 4: DAMAGED EQUIPMENT
-                    if (damagedQty > 0)
+                    // CASE 4: DAMAGED EQUIPMENT (borrowed → damaged)
+                    if (row.DamagedQty > 0)
                     {
-                        System.Diagnostics.Debug.WriteLine($"[saveChangesButton_Click] DAMAGED {damagedQty} units of {equipment.getName()}");
-                        // Equipment was returned but is damaged
-                        // Decrease available quantity (asset impaired)
-                        int currentQty = equipment.getQuantity();
-                        int newQty = Math.Max(0, currentQty - damagedQty);
-                        equipment.setQuantity(newQty);
-                        equipment.setStatus("damaged");
-                        equipment.setLastUpdated(DateTime.Now);
-                        System.Diagnostics.Debug.WriteLine($"[saveChangesButton_Click] Quantity updated: {currentQty} → {newQty}, Status: damaged");
+                        System.Diagnostics.Debug.WriteLine($"[saveChangesButton_Click] DAMAGED {row.DamagedQty} units of {equipment.getName()}");
+
+                        if (isReusable)
+                        {
+                            // For reusable items: mark specific instances as damaged
+                            List<EquipmentInstance> borrowedInstances = EquipmentInstance.getInstancesByEquipmentId(equipmentId)
+                                .Where(inst => inst.getStatus().ToLower() == "borrowed")
+                                .ToList();
+
+                            for (int i = 0; i < Math.Min(row.DamagedQty, borrowedInstances.Count); i++)
+                            {
+                                try
+                                {
+                                    EquipmentInstance inst = borrowedInstances[i];
+                                    System.Diagnostics.Debug.WriteLine($"[saveChangesButton_Click] Marking instance {inst.getSerialNumber()} as damaged");
+                                    inst.setStatus("damaged");
+                                    inst.updateEquipmentInstance();  // Persist to DB
+                                    System.Diagnostics.Debug.WriteLine($"[saveChangesButton_Click] ✓ Instance {inst.getSerialNumber()} marked as damaged");
+                                }
+                                catch (Exception ex)
+                                {
+                                    System.Diagnostics.Debug.WriteLine($"[saveChangesButton_Click] ✗ Failed to mark instance as damaged: {ex.Message}");
+                                    throw new Exception($"Failed to mark instance as damaged: {ex.Message}", ex);
+                                }
+                            }
+                        }
+                        else
+                        {
+                            // For consumable items: decrease quantity (asset impaired)
+                            int currentQty = equipment.getQuantity();
+                            int newQty = Math.Max(0, currentQty - row.DamagedQty);
+                            equipment.setQuantity(newQty);
+                            equipment.setStatus("damaged");
+                            equipment.setLastUpdated(DateTime.Now);
+                        }
                     }
 
-                    // CRITICAL: Persist updated Equipment to database
-                    System.Diagnostics.Debug.WriteLine($"[saveChangesButton_Click] Persisting Equipment {equipment.getId()} to database");
+                    // Persist parent equipment updates
+                    System.Diagnostics.Debug.WriteLine($"[saveChangesButton_Click] Persisting Equipment {equipmentId} to database");
                     equipment.updateEquipment();
                 }
 
-                System.Diagnostics.Debug.WriteLine("[saveChangesButton_Click] ✓ All inventory state transitions completed");
+                System.Diagnostics.Debug.WriteLine("[saveChangesButton_Click] ✓ STEP 1: All instance state transitions completed");
 
-                // ========== PERSIST WAREHOUSE OPERATIONS ==========
+                // ========== STEP 2: PERSIST WAREHOUSE OPERATIONS ==========
+                System.Diagnostics.Debug.WriteLine("[saveChangesButton_Click] STEP 2: Persisting warehouse operations");
                 string operationsJson = buildOperationsJson(rowsWithData);
                 executeWarehouseOperation(orderId, operationsJson);
+                System.Diagnostics.Debug.WriteLine("[saveChangesButton_Click] ✓ Warehouse operations persisted");
 
-                // ========== STATUS ROLLUP: Update Equipment based on Instance counts ==========
-                System.Diagnostics.Debug.WriteLine("[saveChangesButton_Click] Starting instance status rollup");
+                // ========== STEP 3: STATUS ROLLUP & FORCE RELOAD ==========
+                System.Diagnostics.Debug.WriteLine("[saveChangesButton_Click] STEP 3: Rolling up instance statuses to parent Equipment");
 
-                // Collect all distinct Equipment IDs affected in this transaction
                 HashSet<int> affectedEquipmentIds = new HashSet<int>();
                 foreach (GridRowData row in rowsWithData)
                 {
@@ -332,7 +445,6 @@ namespace SmartShevet
 
                 System.Diagnostics.Debug.WriteLine($"[saveChangesButton_Click] Rolling up {affectedEquipmentIds.Count} equipment items");
 
-                // For each affected Equipment, count instances by status and update parent
                 foreach (int equipmentId in affectedEquipmentIds)
                 {
                     Equipment equipment = Equipment.seekEquipment(equipmentId);
@@ -342,10 +454,8 @@ namespace SmartShevet
                         continue;
                     }
 
-                    // Fetch all instances for this equipment
                     List<EquipmentInstance> allInstances = EquipmentInstance.getInstancesByEquipmentId(equipmentId);
 
-                    // Count instances by status
                     int reservedCount = allInstances.Count(inst => inst.getStatus().ToLower() == "reserved");
                     int borrowedCount = allInstances.Count(inst => inst.getStatus().ToLower() == "borrowed");
                     int totalCount = allInstances.Count;
@@ -353,36 +463,45 @@ namespace SmartShevet
 
                     System.Diagnostics.Debug.WriteLine($"[saveChangesButton_Click] Equipment {equipmentId} ({equipment.getName()}): Reserved={reservedCount}, Borrowed={borrowedCount}, Available={availableCount}, Total={totalCount}");
 
-                    // Update Equipment's total quantity to match instance count (for reusable items)
-                    // Instance statuses (reserved, borrowed, available, etc.) are tracked at instance level
-                    equipment.setQuantity(totalCount);  // Total always equals instance count
+                    equipment.setQuantity(totalCount);
                     equipment.setLastUpdated(DateTime.Now);
-
-                    // Persist the updated Equipment to database
                     equipment.updateEquipment();
                     System.Diagnostics.Debug.WriteLine($"[saveChangesButton_Click] ✓ Updated Equipment {equipmentId} with instance counts");
                 }
 
-                System.Diagnostics.Debug.WriteLine("[saveChangesButton_Click] ✓ Status rollup completed");
+                System.Diagnostics.Debug.WriteLine("[saveChangesButton_Click] ✓ STEP 3: Status rollup completed");
 
-                // ========== GOLDEN SYNCHRONIZATION: FORCE RELOAD FROM DATABASE ==========
-                System.Diagnostics.Debug.WriteLine("[saveChangesButton_Click] FORCE RELOAD: Rebuilding in-memory lists from database");
+                // ========== STEP 4: GOLDEN SYNCHRONIZATION - FORCE RELOAD FROM DATABASE ==========
+                System.Diagnostics.Debug.WriteLine("[saveChangesButton_Click] STEP 4: Force reload from database");
+                System.Diagnostics.Debug.WriteLine("[saveChangesButton_Click] Calling Equipment.initEquipments()");
                 Equipment.initEquipments();
-                EquipmentInstance.initEquipmentInstances();
-                System.Diagnostics.Debug.WriteLine("[saveChangesButton_Click] ✓ In-memory lists rebuilt successfully");
 
-                // ========== RELOAD & REFRESH ==========
+                System.Diagnostics.Debug.WriteLine("[saveChangesButton_Click] Calling EquipmentInstance.initEquipmentInstances()");
+                EquipmentInstance.initEquipmentInstances();
+
+                System.Diagnostics.Debug.WriteLine("[saveChangesButton_Click] ✓ In-memory lists rebuilt from database");
+
+                // ========== STEP 5: REFRESH UI ==========
+                System.Diagnostics.Debug.WriteLine("[saveChangesButton_Click] STEP 5: Refreshing UI");
                 reloadAllInMemoryLists();
                 refreshMasterGrid();
                 clearDetailGrid();
 
-                MessageBox.Show($"הזמנה #{orderId} עודכנה בהצלחה!", "הצלחה", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                System.Diagnostics.Debug.WriteLine("[saveChangesButton_Click] ========== SAVE OPERATION COMPLETE ==========");
+
+                // ========== ALL STEPS COMPLETED SUCCESSFULLY — SET SUCCESS FLAG ==========
+                isSuccess = true;
             }
             catch (Exception ex)
             {
                 MessageBox.Show($"שגיאה בשמירה: {ex.Message}", "שגיאה", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                System.Diagnostics.Debug.WriteLine($"[saveChangesButton_Click] ✗ Exception: {ex}");
-                return;  // Exit immediately after error — do NOT show success message
+                System.Diagnostics.Debug.WriteLine($"[saveChangesButton_Click] ✗✗✗ EXCEPTION: {ex.Message}\nStack: {ex.StackTrace}");
+            }
+
+            // ========== SHOW SUCCESS MESSAGE EXACTLY ONCE — ONLY IF ALL STEPS COMPLETED ==========
+            if (isSuccess)
+            {
+                MessageBox.Show("הפעולה בוצעה בהצלחה", "הצלחה", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
         }
 

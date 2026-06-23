@@ -14,6 +14,7 @@ namespace SmartShevet
             this.RightToLeft = RightToLeft.Yes;
             initializeDateRanges();
             loadCategories();
+            FixLayoutOverlap();  // Fix top container overlapping with grids
         }
 
         private void initializeDateRanges()
@@ -32,6 +33,44 @@ namespace SmartShevet
                     categoryComboBox.Items.Add(eq.getCategory());
             }
             categoryComboBox.SelectedIndex = 0;
+        }
+
+        private void FixLayoutOverlap()
+        {
+            // Use dynamic positioning to avoid hardcoded pixel conflicts
+            // Position each grid EXACTLY below the previous element with minimal spacing
+
+            int spacing = 10;
+
+            // filterPanel should be at top with fixed height
+            filterPanel.Location = new System.Drawing.Point(20, 50);
+            filterPanel.Size = new System.Drawing.Size(780, 140);
+
+            // consumablesCardPanel: Start below filterPanel
+            int consumablesTop = filterPanel.Bottom + spacing;
+            consumablesCardPanel.Location = new System.Drawing.Point(20, consumablesTop);
+            consumablesCardPanel.Size = new System.Drawing.Size(780, 170);
+
+            // unretrurnedCardPanel: Start below consumablesCardPanel
+            int unretrurnedTop = consumablesCardPanel.Bottom + spacing;
+            unretrurnedCardPanel.Location = new System.Drawing.Point(20, unretrurnedTop);
+            unretrurnedCardPanel.Size = new System.Drawing.Size(780, 170);
+
+            // damagedCardPanel: Start below unretrurnedCardPanel
+            int damagedTop = unretrurnedCardPanel.Bottom + spacing;
+            damagedCardPanel.Location = new System.Drawing.Point(20, damagedTop);
+            damagedCardPanel.Size = new System.Drawing.Size(780, 170);
+
+            // totalsCardPanel: Start below damagedCardPanel
+            int totalsTop = damagedCardPanel.Bottom + spacing;
+            totalsCardPanel.Location = new System.Drawing.Point(20, totalsTop);
+            totalsCardPanel.Size = new System.Drawing.Size(780, 170);
+
+            System.Diagnostics.Debug.WriteLine($"[FixLayoutOverlap] filterPanel: {filterPanel.Location} / {filterPanel.Size}");
+            System.Diagnostics.Debug.WriteLine($"[FixLayoutOverlap] consumablesCardPanel: {consumablesCardPanel.Location} / {consumablesCardPanel.Size}");
+            System.Diagnostics.Debug.WriteLine($"[FixLayoutOverlap] unretrurnedCardPanel: {unretrurnedCardPanel.Location} / {unretrurnedCardPanel.Size}");
+            System.Diagnostics.Debug.WriteLine($"[FixLayoutOverlap] damagedCardPanel: {damagedCardPanel.Location} / {damagedCardPanel.Size}");
+            System.Diagnostics.Debug.WriteLine($"[FixLayoutOverlap] totalsCardPanel: {totalsCardPanel.Location} / {totalsCardPanel.Size}");
         }
 
         private void generateReportButton_Click(object sender, EventArgs e)

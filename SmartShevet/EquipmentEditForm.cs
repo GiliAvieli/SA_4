@@ -279,31 +279,37 @@ namespace SmartShevet
                             try
                             {
                                 int nextInstanceId = EquipmentInstance.getNextEquipmentInstanceId();
-                                string serialNumber = $"EQUIP-{equipment.getId()}-{DateTime.Now.Ticks}";
+                                int parentEquipmentId = equipment.getId();
 
+                                // Auto-generate unique SerialNumber: EquipmentId_RandomGuid (8 chars)
+                                string serialNumber = $"{parentEquipmentId}_{Guid.NewGuid().ToString().Substring(0, 8)}";
+
+                                System.Diagnostics.Debug.WriteLine($"[saveButton_Click] Creating instance #{i + 1}: ID={nextInstanceId}, Equipment={parentEquipmentId}, Serial={serialNumber}");
+
+                                // Create new EquipmentInstance with ALL mandatory fields explicitly set
                                 EquipmentInstance newInstance = new EquipmentInstance(
-                                    nextInstanceId,
-                                    equipment.getId(),
-                                    serialNumber,
-                                    "available",
-                                    DateTime.Now,
-                                    DateTime.Now,
-                                    null,
-                                    is_new: true  // Persists to DB immediately via constructor
+                                    nextInstanceId,              // instance_id
+                                    parentEquipmentId,           // equipment_id (CRITICAL)
+                                    serialNumber,                // serial_number (CRITICAL: Unique)
+                                    "available",                 // status (CRITICAL)
+                                    DateTime.Now,                // date_added
+                                    DateTime.Now,                // last_updated
+                                    null,                        // notes
+                                    is_new: true                 // Persists to DB immediately via constructor
                                 );
 
-                                System.Diagnostics.Debug.WriteLine($"[saveButton_Click] ✓ Created instance #{i + 1}: {serialNumber}");
+                                System.Diagnostics.Debug.WriteLine($"[saveButton_Click] ✓ Created and persisted instance #{i + 1}: {serialNumber}");
                             }
                             catch (Exception ex)
                             {
-                                System.Diagnostics.Debug.WriteLine($"[saveButton_Click] ✗ Failed to create instance #{i + 1}: {ex.Message}");
-                                throw new Exception($"Failed to create equipment instance: {ex.Message}", ex);
+                                System.Diagnostics.Debug.WriteLine($"[saveButton_Click] ✗ Failed to create instance #{i + 1}: {ex.Message}\nStack: {ex.StackTrace}");
+                                throw new Exception($"Failed to create equipment instance #{i + 1}: {ex.Message}", ex);
                             }
                         }
 
                         equipment.setQuantity(newQuantity);
                         equipment.updateEquipment();
-                        System.Diagnostics.Debug.WriteLine($"[saveButton_Click] ✓ Equipment quantity updated: {newQuantity}");
+                        System.Diagnostics.Debug.WriteLine($"[saveButton_Click] ✓ Created {quantityDifference} instances, Equipment quantity updated: {newQuantity}");
                     }
 
                     // SUBCASE 2B: DECREASING QUANTITY - DELETE AVAILABLE INSTANCES

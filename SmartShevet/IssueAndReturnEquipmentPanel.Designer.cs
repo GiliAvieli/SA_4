@@ -131,6 +131,7 @@ namespace SmartShevet
             this.detailItemsGridView.Name = "detailItemsGridView";
             this.detailItemsGridView.Size = new System.Drawing.Size(780, 200);
             this.detailItemsGridView.TabIndex = 5;
+            this.detailItemsGridView.AutoSizeColumnsMode = System.Windows.Forms.DataGridViewAutoSizeColumnsMode.AllCells;
             this.detailItemsGridView.BackgroundColor = System.Drawing.Color.White;  // #FFFFFF
             this.detailItemsGridView.GridColor = System.Drawing.Color.FromArgb(229, 231, 235);  // #E5E7EB (row dividers)
             this.detailItemsGridView.EnableHeadersVisualStyles = false;  // CRITICAL for custom header colors
